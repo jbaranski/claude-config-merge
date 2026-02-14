@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "claude-config-merge",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/claude-config-merge",
+      "args": ["-config", "${env:HOME}/.claude-config-merge.json"]
+    }
+  ]
+}

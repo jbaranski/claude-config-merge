@@ -1,0 +1,61 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck # includes gosimple, stylecheck, and unused
+    - misspell
+    - revive
+    - goprintffuncname
+    - unconvert
+    - gocritic
+    - gosec
+    - dupl
+    - exhaustive
+    - gocyclo
+    - godot
+    - prealloc
+    - bodyclose
+    - nilerr
+    - nolintlint
+    - unparam
+  exclusions:
+    paths:
+      - vendor
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    gocyclo:
+      min-complexity: 15
+    dupl:
+      threshold: 100
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    revive:
+      rules:
+        - name: var-naming
+        - name: exported
+        - name: indent-error-flow
+    gosec:
+      excludes:
+        - G304 # file path from variable is intentional for a CLI merge tool
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - vendor
