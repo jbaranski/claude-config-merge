@@ -11,8 +11,9 @@ import (
 )
 
 // run performs the merge of masterPath into localPath, writing output to w.
+// When force is true, conflicting keys use the master value instead of keeping local.
 // Returns an error if any step fails.
-func run(masterPath, localPath string, w io.Writer) error {
+func run(masterPath, localPath string, force bool, w io.Writer) error {
 	masterData, err := loadJSON(masterPath)
 	if err != nil {
 		return fmt.Errorf("failed to load master settings: %w", err)
@@ -23,37 +24,11 @@ func run(masterPath, localPath string, w io.Writer) error {
 		return fmt.Errorf("failed to load local settings (%s): %w", localPath, err)
 	}
 
-	result := merge.Merge(masterData, localData)
+	result := merge.Merge(masterData, localData, force)
 
-	if len(result.Conflicts) > 0 {
-		const sep = "  ------------------------------------------------------------"
-		fmt.Fprintf(w, "\nConflicts (local value kept):\n")
-		for _, c := range result.Conflicts {
-			fmt.Fprintf(w, "\n%s\n", sep)
-			fmt.Fprintf(w, "  %s\n", c.Key)
-			fmt.Fprintf(w, "    master: %s\n", formatValue(c.MasterValue))
-			fmt.Fprintf(w, "    local:  %s\n", formatValue(c.LocalValue))
-		}
-		fmt.Fprintf(w, "\n%s\n\n", sep)
-	}
+	printMergeReport(&result, w)
 
-	if len(result.Matching) > 0 {
-		fmt.Fprintf(w, "Matching keys:\n")
-		for _, k := range result.Matching {
-			fmt.Fprintf(w, "  %s\n", k)
-		}
-		fmt.Fprintf(w, "\n")
-	}
-
-	if len(result.LocalOnly) > 0 {
-		fmt.Fprintf(w, "Local-only keys (not in master):\n")
-		for _, k := range result.LocalOnly {
-			fmt.Fprintf(w, "  %s\n", k)
-		}
-		fmt.Fprintf(w, "\n")
-	}
-
-	if len(result.Added) == 0 {
+	if len(result.Added) == 0 && len(result.Forced) == 0 {
 		fmt.Fprintf(w, "No changes to write. Keys added: 0  |  Conflicts: %d  |  Matching: %d  |  Local-only: %d\n", len(result.Conflicts), len(result.Matching), len(result.LocalOnly))
 		return nil
 	}
@@ -73,16 +48,60 @@ func run(masterPath, localPath string, w io.Writer) error {
 		return fmt.Errorf("failed to write merged settings: %w", err)
 	}
 
-	fmt.Fprintf(w, "Keys added:\n")
-	for _, k := range result.Added {
-		fmt.Fprintf(w, "  %s\n", k)
+	if len(result.Added) > 0 {
+		fmt.Fprintf(w, "Keys added:\n")
+		for _, k := range result.Added {
+			fmt.Fprintf(w, "  %s\n", k)
+		}
+		fmt.Fprintf(w, "\n")
 	}
-	fmt.Fprintf(w, "\n")
 
-	fmt.Fprintf(w, "Done. Keys added: %d  |  Conflicts: %d  |  Matching: %d  |  Local-only: %d\n", len(result.Added), len(result.Conflicts), len(result.Matching), len(result.LocalOnly))
+	fmt.Fprintf(w, "Done. Keys added: %d  |  Forced: %d  |  Conflicts: %d  |  Matching: %d  |  Local-only: %d\n", len(result.Added), len(result.Forced), len(result.Conflicts), len(result.Matching), len(result.LocalOnly))
 	fmt.Fprintf(w, "Written to: %s\n", localPath)
 
 	return nil
+}
+
+// printMergeReport writes the conflict, forced, matching, and local-only
+// sections of the merge report to w.
+func printMergeReport(result *merge.Result, w io.Writer) {
+	const sep = "  ------------------------------------------------------------"
+
+	if len(result.Conflicts) > 0 {
+		fmt.Fprintf(w, "\nConflicts (local value kept):\n")
+		for _, c := range result.Conflicts {
+			fmt.Fprintf(w, "\n%s\n", sep)
+			fmt.Fprintf(w, "  %s\n", c.Key)
+			fmt.Fprintf(w, "    master: %s\n", formatValue(c.MasterValue))
+			fmt.Fprintf(w, "    local:  %s\n", formatValue(c.LocalValue))
+		}
+		fmt.Fprintf(w, "\n%s\n\n", sep)
+	}
+
+	if len(result.Forced) > 0 {
+		fmt.Fprintf(w, "\nForced overwrites (master value applied):\n")
+		for _, k := range result.Forced {
+			fmt.Fprintf(w, "\n%s\n", sep)
+			fmt.Fprintf(w, "  %s\n", k)
+		}
+		fmt.Fprintf(w, "\n%s\n\n", sep)
+	}
+
+	if len(result.Matching) > 0 {
+		fmt.Fprintf(w, "Matching keys:\n")
+		for _, k := range result.Matching {
+			fmt.Fprintf(w, "  %s\n", k)
+		}
+		fmt.Fprintf(w, "\n")
+	}
+
+	if len(result.LocalOnly) > 0 {
+		fmt.Fprintf(w, "Local-only keys (not in master):\n")
+		for _, k := range result.LocalOnly {
+			fmt.Fprintf(w, "  %s\n", k)
+		}
+		fmt.Fprintf(w, "\n")
+	}
 }
 
 // formatValue returns a human-readable string for a conflict value.

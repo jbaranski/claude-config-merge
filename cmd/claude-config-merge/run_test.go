@@ -42,7 +42,7 @@ func TestRun_MergesNewKeys(t *testing.T) {
 	writeJSON(t, localPath, map[string]any{"fromLocal": "yes", "shared": "local"})
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -68,7 +68,7 @@ func TestRun_ReportsConflictsInOutput(t *testing.T) {
 	writeJSON(t, localPath, map[string]any{"key": "local-value"})
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -86,7 +86,7 @@ func TestRun_MatchingKeysSkipsWrite(t *testing.T) {
 	writeJSON(t, localPath, map[string]any{"key": "same"})
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestRun_CreatesBackupFile(t *testing.T) {
 	writeJSON(t, localPath, map[string]any{})
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -139,7 +139,7 @@ func TestRun_MissingMaster(t *testing.T) {
 	localPath := filepath.Join(dir, "local.json")
 	writeJSON(t, localPath, map[string]any{})
 
-	err := run("/nonexistent/master.json", localPath, &bytes.Buffer{})
+	err := run("/nonexistent/master.json", localPath, false, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("expected error for missing master, got nil")
 	}
@@ -150,7 +150,7 @@ func TestRun_MissingLocal(t *testing.T) {
 	masterPath := filepath.Join(dir, "master.json")
 	writeJSON(t, masterPath, map[string]any{})
 
-	err := run(masterPath, "/nonexistent/local.json", &bytes.Buffer{})
+	err := run(masterPath, "/nonexistent/local.json", false, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("expected error for missing local, got nil")
 	}
@@ -183,7 +183,7 @@ func TestRun_WriteFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(localPath, 0o600) })
 
-	err := run(masterPath, localPath, &bytes.Buffer{})
+	err := run(masterPath, localPath, false, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("expected error when writing to read-only file, got nil")
 	}
@@ -198,7 +198,7 @@ func TestRun_ListsAddedKeys(t *testing.T) {
 	writeJSON(t, localPath, map[string]any{})
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func TestRun_ListsMatchingKeys(t *testing.T) {
 	writeJSON(t, localPath, map[string]any{"sharedKey": "same-value"})
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -245,7 +245,7 @@ func TestRun_ConflictWithNestedObjectValue(t *testing.T) {
 	writeJSON(t, localPath, map[string]any{"key": map[string]any{"nested": "local-val"}})
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -274,7 +274,7 @@ func TestRun_ConflictWithSliceValue(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -299,7 +299,7 @@ func TestRun_ListsLocalOnlyKeys(t *testing.T) {
 	writeJSON(t, localPath, map[string]any{"localOnlyKey": "local-value", "masterKey": "value"})
 
 	var buf bytes.Buffer
-	if err := run(masterPath, localPath, &buf); err != nil {
+	if err := run(masterPath, localPath, false, &buf); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -309,5 +309,55 @@ func TestRun_ListsLocalOnlyKeys(t *testing.T) {
 	}
 	if !strings.Contains(output, "localOnlyKey") {
 		t.Errorf("expected 'localOnlyKey' listed under local-only keys, got:\n%s", output)
+	}
+}
+
+func TestRun_ForceOnlyNoEmptyAddedSection(t *testing.T) {
+	dir := t.TempDir()
+	masterPath := filepath.Join(dir, "master.json")
+	localPath := filepath.Join(dir, "local.json")
+
+	// Master and local share one key with different values; no new keys from master.
+	writeJSON(t, masterPath, map[string]any{"key": "master-value"})
+	writeJSON(t, localPath, map[string]any{"key": "local-value"})
+
+	var buf bytes.Buffer
+	if err := run(masterPath, localPath, true, &buf); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	// "Keys added:\n" is the section header (followed immediately by a newline
+	// and key listings). The summary line prints "Keys added: 0" (with a number),
+	// so checking for the header form ensures the section block is absent.
+	if strings.Contains(output, "Keys added:\n") {
+		t.Errorf("expected no 'Keys added:' section when nothing was added, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Forced overwrites") {
+		t.Errorf("expected 'Forced overwrites' in output, got:\n%s", output)
+	}
+}
+
+func TestRun_ForceOverwritesConflict(t *testing.T) {
+	dir := t.TempDir()
+	masterPath := filepath.Join(dir, "master.json")
+	localPath := filepath.Join(dir, "local.json")
+
+	writeJSON(t, masterPath, map[string]any{"key": "master-value"})
+	writeJSON(t, localPath, map[string]any{"key": "local-value"})
+
+	var buf bytes.Buffer
+	if err := run(masterPath, localPath, true, &buf); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	result := readJSON(t, localPath)
+	if result["key"] != "master-value" {
+		t.Errorf("key = %v; want master-value (master must win with force)", result["key"])
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Forced overwrites") {
+		t.Errorf("expected 'Forced overwrites' in output, got:\n%s", output)
 	}
 }

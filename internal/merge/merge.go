@@ -14,16 +14,18 @@ type Conflict struct {
 type Result struct {
 	Merged    map[string]any
 	Conflicts []Conflict
+	Forced    []string // keys where master overwrote local due to force
 	Added     []string // keys from master not in local
 	Matching  []string // keys present in both with identical values
 	LocalOnly []string // keys in local not present in master
 }
 
-// Merge combines master into local. Keys already present in local are kept;
-// nested objects are recursively merged. Keys with identical values are counted
-// as matching. Keys with differing values are recorded as conflicts.
-// Keys present only in local are recorded for awareness.
-func Merge(master, local map[string]any) Result {
+// Merge combines master into local. Keys already present in local are kept
+// unless force is true, in which case conflicting keys use the master value.
+// Nested objects are recursively merged. Keys with identical values are counted
+// as matching. Keys with differing values are recorded as conflicts (or forced
+// if force is true). Keys present only in local are recorded for awareness.
+func Merge(master, local map[string]any, force bool) Result {
 	result := Result{
 		Merged: make(map[string]any, len(local)),
 	}
@@ -33,13 +35,13 @@ func Merge(master, local map[string]any) Result {
 		result.Merged[k] = v
 	}
 
-	mergeInto(result.Merged, master, local, "", &result)
+	mergeInto(result.Merged, master, local, "", force, &result)
 
 	return result
 }
 
 // mergeInto recursively merges src into dst, tracking additions, matches, conflicts, and local-only keys.
-func mergeInto(dst, src, localSrc map[string]any, prefix string, result *Result) {
+func mergeInto(dst, src, localSrc map[string]any, prefix string, force bool, result *Result) {
 	for k, srcVal := range src {
 		key := qualifiedKey(prefix, k)
 
@@ -59,13 +61,19 @@ func mergeInto(dst, src, localSrc map[string]any, prefix string, result *Result)
 			if localSrc != nil {
 				localSubMap, _ = localSrc[k].(map[string]any)
 			}
-			mergeInto(dstMap, srcMap, localSubMap, key, result)
+			mergeInto(dstMap, srcMap, localSubMap, key, force, result)
 			dst[k] = dstMap
 			continue
 		}
 
 		if reflect.DeepEqual(srcVal, dstVal) {
 			result.Matching = append(result.Matching, key)
+			continue
+		}
+
+		if force {
+			dst[k] = srcVal
+			result.Forced = append(result.Forced, key)
 			continue
 		}
 
@@ -85,8 +93,6 @@ func mergeInto(dst, src, localSrc map[string]any, prefix string, result *Result)
 				if _, inLocal := localSrc[k]; inLocal {
 					result.LocalOnly = append(result.LocalOnly, key)
 				}
-			} else if _, inLocal := dst[k]; inLocal {
-				result.LocalOnly = append(result.LocalOnly, key)
 			}
 		}
 	}

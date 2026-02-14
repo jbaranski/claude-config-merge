@@ -8,7 +8,7 @@ func TestMerge_AddsNewKeys(t *testing.T) {
 	master := map[string]any{"newKey": "value", "another": 42.0}
 	local := map[string]any{"existingKey": "local"}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if result.Merged["newKey"] != "value" {
 		t.Errorf("newKey = %v; want %q", result.Merged["newKey"], "value")
@@ -28,7 +28,7 @@ func TestMerge_KeepsLocalOnConflict(t *testing.T) {
 	master := map[string]any{"key": "master-value"}
 	local := map[string]any{"key": "local-value"}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if result.Merged["key"] != "local-value" {
 		t.Errorf("key = %v; want %q", result.Merged["key"], "local-value")
@@ -42,7 +42,7 @@ func TestMerge_ReportsConflicts(t *testing.T) {
 	master := map[string]any{"key": "master-value"}
 	local := map[string]any{"key": "local-value"}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if len(result.Conflicts) != 1 {
 		t.Fatalf("Conflicts = %d; want 1", len(result.Conflicts))
@@ -73,7 +73,7 @@ func TestMerge_DeepMergesNestedObjects(t *testing.T) {
 		},
 	}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	nested, ok := result.Merged["nested"].(map[string]any)
 	if !ok {
@@ -100,7 +100,7 @@ func TestMerge_EmptyMaster(t *testing.T) {
 	master := map[string]any{}
 	local := map[string]any{"key": "value"}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if result.Merged["key"] != "value" {
 		t.Errorf("key = %v; want %q", result.Merged["key"], "value")
@@ -114,7 +114,7 @@ func TestMerge_EmptyLocal(t *testing.T) {
 	master := map[string]any{"key": "value"}
 	local := map[string]any{}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if result.Merged["key"] != "value" {
 		t.Errorf("key = %v; want %q", result.Merged["key"], "value")
@@ -128,7 +128,7 @@ func TestMerge_MatchingKeysNotConflicts(t *testing.T) {
 	master := map[string]any{"key": "same"}
 	local := map[string]any{"key": "same"}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if len(result.Conflicts) != 0 {
 		t.Errorf("Conflicts = %d; want 0 (identical values are not conflicts)", len(result.Conflicts))
@@ -146,7 +146,7 @@ func TestMerge_MatchingSlicesNotConflicts(t *testing.T) {
 	master := map[string]any{"key": val}
 	local := map[string]any{"key": val}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if len(result.Conflicts) != 0 {
 		t.Errorf("Conflicts = %d; want 0 (identical slices are not conflicts)", len(result.Conflicts))
@@ -160,7 +160,7 @@ func TestMerge_LocalOnlyKeys(t *testing.T) {
 	master := map[string]any{"masterKey": "value"}
 	local := map[string]any{"masterKey": "value", "localOnly": "mine"}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if len(result.LocalOnly) != 1 {
 		t.Fatalf("LocalOnly = %d; want 1", len(result.LocalOnly))
@@ -178,7 +178,7 @@ func TestMerge_NestedLocalOnlyKeys(t *testing.T) {
 		"nested": map[string]any{"localOnlyNested": "v"},
 	}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	// "nested.localOnlyNested" exists only in local — must appear in LocalOnly.
 	found := false
@@ -210,12 +210,52 @@ func TestMerge_ScalarVsObjectConflict(t *testing.T) {
 	master := map[string]any{"key": map[string]any{"nested": "val"}}
 	local := map[string]any{"key": "scalar"}
 
-	result := Merge(master, local)
+	result := Merge(master, local, false)
 
 	if result.Merged["key"] != "scalar" {
 		t.Errorf("key = %v; want %q", result.Merged["key"], "scalar")
 	}
 	if len(result.Conflicts) != 1 {
 		t.Errorf("Conflicts = %d; want 1", len(result.Conflicts))
+	}
+}
+
+func TestMerge_ForceOverwritesConflicts(t *testing.T) {
+	master := map[string]any{"key": "master-value"}
+	local := map[string]any{"key": "local-value"}
+
+	result := Merge(master, local, true)
+
+	if result.Merged["key"] != "master-value" {
+		t.Errorf("key = %v; want %q (master must win with force)", result.Merged["key"], "master-value")
+	}
+	if len(result.Conflicts) != 0 {
+		t.Errorf("Conflicts = %d; want 0 (force replaces conflicts with forced)", len(result.Conflicts))
+	}
+	if len(result.Forced) != 1 {
+		t.Fatalf("Forced = %d; want 1", len(result.Forced))
+	}
+	if result.Forced[0] != "key" {
+		t.Errorf("Forced[0] = %q; want %q", result.Forced[0], "key")
+	}
+}
+
+func TestMerge_ForceDoesNotAffectAdded(t *testing.T) {
+	master := map[string]any{"newKey": "from-master"}
+	local := map[string]any{"existingKey": "local"}
+
+	result := Merge(master, local, true)
+
+	if result.Merged["newKey"] != "from-master" {
+		t.Errorf("newKey = %v; want %q", result.Merged["newKey"], "from-master")
+	}
+	if len(result.Added) != 1 {
+		t.Errorf("Added = %d; want 1", len(result.Added))
+	}
+	if result.Added[0] != "newKey" {
+		t.Errorf("Added[0] = %q; want %q", result.Added[0], "newKey")
+	}
+	if len(result.Forced) != 0 {
+		t.Errorf("Forced = %d; want 0 (no conflicts to force)", len(result.Forced))
 	}
 }
