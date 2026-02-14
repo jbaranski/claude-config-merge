@@ -1,4 +1,4 @@
-// Package dirsync copies files from one directory to another.
+// Package dirsync copies files and directories from one directory to another.
 package dirsync
 
 import (
@@ -11,14 +11,14 @@ import (
 
 // Result holds the outcome of a directory sync operation.
 type Result struct {
-	Copied  []string // files copied (new)
-	Skipped []string // files skipped (already exist, no force)
-	Forced  []string // files overwritten because force=true
+	Copied  []string // entries copied (new)
+	Skipped []string // entries skipped (already exist, no force)
+	Forced  []string // entries overwritten because force=true
 }
 
-// Sync copies regular files from src to dst.
-// If force is false, existing files in dst are skipped.
-// If force is true, existing files in dst are overwritten.
+// Sync copies regular files and subdirectories from src to dst.
+// If force is false, existing entries in dst are skipped.
+// If force is true, existing entries in dst are overwritten.
 // src not existing is not an error — returns empty Result.
 // dst is created if it does not exist.
 func Sync(src, dst string, force bool) (Result, error) {
@@ -32,20 +32,18 @@ func Sync(src, dst string, force bool) (Result, error) {
 		return res, fmt.Errorf("reading source directory %s: %w", src, err)
 	}
 
-	if err := os.MkdirAll(dst, 0o750); err != nil {
+	if err := os.MkdirAll(dst, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
 		return res, fmt.Errorf("creating destination directory %s: %w", dst, err)
 	}
 
 	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
-		}
-
 		name := entry.Name()
 		srcPath := filepath.Join(src, name)
 		dstPath := filepath.Join(dst, name)
 
-		_, statErr := os.Stat(dstPath)
+		// Use Lstat so broken/circular symlinks are treated as "exists"
+		// rather than causing an infinite-follow error.
+		_, statErr := os.Lstat(dstPath)
 		if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
 			return res, fmt.Errorf("stat %s: %w", dstPath, statErr)
 		}
@@ -56,8 +54,18 @@ func Sync(src, dst string, force bool) (Result, error) {
 			continue
 		}
 
-		if err := copyFile(srcPath, dstPath); err != nil {
-			return res, err
+		switch {
+		case entry.Type().IsRegular():
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return res, err
+			}
+		case entry.IsDir():
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return res, err
+			}
+		default:
+			// Skip symlinks and other special types.
+			continue
 		}
 
 		if exists {
@@ -68,6 +76,36 @@ func Sync(src, dst string, force bool) (Result, error) {
 	}
 
 	return res, nil
+}
+
+// copyDir recursively copies the directory tree at src to dst.
+func copyDir(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", src, err)
+	}
+
+	if err := os.MkdirAll(dst, 0o750); err != nil && !errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("creating %s: %w", dst, err)
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		switch {
+		case entry.IsDir():
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		case entry.Type().IsRegular():
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // copyFile copies the file at src to dst, preserving the source file's permissions.

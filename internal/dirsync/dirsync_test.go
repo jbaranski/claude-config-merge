@@ -166,28 +166,87 @@ func TestSync_CreatesDestDir(t *testing.T) {
 	}
 }
 
-func TestSync_IgnoresSubdirectories(t *testing.T) {
+func TestSync_CopiesSubdirectory(t *testing.T) {
 	src, dst := makeSrcDst(t)
 
-	writeFile(t, filepath.Join(src, "real.md"), "file content")
-
-	// Create a subdirectory in src — it should not be copied.
-	if err := os.MkdirAll(filepath.Join(src, "subdir"), 0o750); err != nil {
+	// Skill-style layout: <name>/SKILL.md
+	if err := os.MkdirAll(filepath.Join(src, "jeff-skill-foo"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(src, "subdir", "nested.md"), "nested content")
+	writeFile(t, filepath.Join(src, "jeff-skill-foo", "SKILL.md"), "skill content")
 
 	res, err := dirsync.Sync(src, dst, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(res.Copied) != 1 || res.Copied[0] != "real.md" {
-		t.Errorf("Copied = %v; want [real.md] only", res.Copied)
+	if len(res.Copied) != 1 || res.Copied[0] != "jeff-skill-foo" {
+		t.Errorf("Copied = %v; want [jeff-skill-foo]", res.Copied)
 	}
 
-	if _, statErr := os.Stat(filepath.Join(dst, "subdir")); statErr == nil {
-		t.Error("subdirectory should not be copied to dst")
+	got := readFile(t, filepath.Join(dst, "jeff-skill-foo", "SKILL.md"))
+	if got != "skill content" {
+		t.Errorf("SKILL.md content = %q; want %q", got, "skill content")
+	}
+}
+
+// test opposite behaviors (skip vs overwrite on dirs) and necessarily share similar structure.
+//
+//nolint:dupl // TestSync_SkipsExistingSubdirectory and TestSync_ForcesExistingSubdirectory
+func TestSync_SkipsExistingSubdirectory(t *testing.T) {
+	src, dst := makeSrcDst(t)
+
+	if err := os.MkdirAll(filepath.Join(src, "jeff-skill-foo"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(src, "jeff-skill-foo", "SKILL.md"), "new content")
+
+	// Pre-existing directory in dst with different content.
+	if err := os.MkdirAll(filepath.Join(dst, "jeff-skill-foo"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dst, "jeff-skill-foo", "SKILL.md"), "original content")
+
+	res, err := dirsync.Sync(src, dst, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(res.Skipped) != 1 || res.Skipped[0] != "jeff-skill-foo" {
+		t.Errorf("Skipped = %v; want [jeff-skill-foo]", res.Skipped)
+	}
+	// Original content must be preserved.
+	if readFile(t, filepath.Join(dst, "jeff-skill-foo", "SKILL.md")) != "original content" {
+		t.Error("existing subdirectory should not be overwritten when force=false")
+	}
+}
+
+// test opposite behaviors (overwrite vs skip on dirs) and necessarily share similar structure.
+//
+//nolint:dupl // TestSync_ForcesExistingSubdirectory and TestSync_SkipsExistingSubdirectory
+func TestSync_ForcesExistingSubdirectory(t *testing.T) {
+	src, dst := makeSrcDst(t)
+
+	if err := os.MkdirAll(filepath.Join(src, "jeff-skill-foo"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(src, "jeff-skill-foo", "SKILL.md"), "new content")
+
+	if err := os.MkdirAll(filepath.Join(dst, "jeff-skill-foo"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dst, "jeff-skill-foo", "SKILL.md"), "original content")
+
+	res, err := dirsync.Sync(src, dst, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(res.Forced) != 1 || res.Forced[0] != "jeff-skill-foo" {
+		t.Errorf("Forced = %v; want [jeff-skill-foo]", res.Forced)
+	}
+	if readFile(t, filepath.Join(dst, "jeff-skill-foo", "SKILL.md")) != "new content" {
+		t.Error("subdirectory content should be overwritten when force=true")
 	}
 }
 
