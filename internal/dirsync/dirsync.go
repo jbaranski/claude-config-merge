@@ -121,19 +121,34 @@ func copyFile(src, dst string) error {
 	}
 	defer in.Close() //nolint:errcheck // best-effort close of read-only source
 
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode())
+	tmp, err := os.CreateTemp(filepath.Dir(dst), ".copy-*")
 	if err != nil {
-		return fmt.Errorf("creating %s: %w", dst, err)
+		return fmt.Errorf("creating temp file for %s: %w", dst, err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		if tmpName != "" {
+			_ = os.Remove(tmpName)
+		}
+	}()
+
+	if err := tmp.Chmod(info.Mode()); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("setting permissions on temp file: %w", err)
 	}
 
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
 		return fmt.Errorf("copying %s to %s: %w", src, dst, err)
 	}
 
-	if err := out.Close(); err != nil {
-		return fmt.Errorf("closing %s: %w", dst, err)
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file for %s: %w", dst, err)
 	}
 
+	if err := os.Rename(tmpName, dst); err != nil {
+		return fmt.Errorf("renaming temp to %s: %w", dst, err)
+	}
+	tmpName = "" // disarm the defer
 	return nil
 }

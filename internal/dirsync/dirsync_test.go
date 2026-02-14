@@ -251,6 +251,10 @@ func TestSync_ForcesExistingSubdirectory(t *testing.T) {
 }
 
 func TestSync_ErrorOnUnreadableSourceFile(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission test: running as root")
+	}
+
 	src, dst := makeSrcDst(t)
 
 	srcFile := filepath.Join(src, "secret.md")
@@ -268,7 +272,39 @@ func TestSync_ErrorOnUnreadableSourceFile(t *testing.T) {
 	}
 }
 
+func TestSync_ErrorOnUnreadableFileInSubdirectory(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission test: running as root")
+	}
+
+	src, dst := makeSrcDst(t)
+
+	// Create a subdirectory with a file inside it.
+	subDir := filepath.Join(src, "myskill")
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	secretFile := filepath.Join(subDir, "secret.md")
+	writeFile(t, secretFile, "secret content")
+
+	// Remove all permissions from the file so copyFile will fail when
+	// copyDir tries to open it.
+	if err := os.Chmod(secretFile, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(secretFile, 0o600) })
+
+	_, err := dirsync.Sync(src, dst, false)
+	if err == nil {
+		t.Fatal("expected error when file inside subdirectory is unreadable, got nil")
+	}
+}
+
 func TestSync_ErrorWhenDestDirNotCreatable(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission test: running as root")
+	}
+
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src")
 	// Put dst under a read-only directory so MkdirAll fails.

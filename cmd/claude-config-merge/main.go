@@ -108,25 +108,37 @@ EXAMPLES
 func dispatch(subcommand string, args []string, cfg *config.Config, home string, w io.Writer) error {
 	switch subcommand {
 	case "settings":
-		force := parseForceFlagSet("settings", args)
+		force, err := parseForceFlagSet("settings", args)
+		if err != nil {
+			return err
+		}
 		masterPath := filepath.Join(cfg.ConfigDir, ".claude", "settings.json")
 		localPath := filepath.Join(home, ".claude", "settings.json")
 		return run(masterPath, localPath, force, w)
 
 	case "agents":
-		force := parseForceFlagSet("agents", args)
+		force, err := parseForceFlagSet("agents", args)
+		if err != nil {
+			return err
+		}
 		srcDir := filepath.Join(cfg.ConfigDir, ".claude", "agents")
 		dstDir := filepath.Join(home, ".claude", "agents")
 		return runSync(srcDir, dstDir, force, "Agents", w)
 
 	case "skills":
-		force := parseForceFlagSet("skills", args)
+		force, err := parseForceFlagSet("skills", args)
+		if err != nil {
+			return err
+		}
 		srcDir := filepath.Join(cfg.ConfigDir, ".claude", "skills")
 		dstDir := filepath.Join(home, ".claude", "skills")
 		return runSync(srcDir, dstDir, force, "Skills", w)
 
 	case "all":
-		force := parseForceFlagSet("all", args)
+		force, err := parseForceFlagSet("all", args)
+		if err != nil {
+			return err
+		}
 
 		masterPath := filepath.Join(cfg.ConfigDir, ".claude", "settings.json")
 		localPath := filepath.Join(home, ".claude", "settings.json")
@@ -149,7 +161,6 @@ func dispatch(subcommand string, args []string, cfg *config.Config, home string,
 		return runCleanupBak(claudeDir, w)
 
 	default:
-		fmt.Fprintf(w, "unknown subcommand %q\n", subcommand)
 		fmt.Fprintf(w, "usage: claude-config-merge [settings|agents|skills|all|cleanup-bak] [-f]\n")
 		return fmt.Errorf("unknown subcommand %q", subcommand)
 	}
@@ -173,12 +184,12 @@ func loadConfig(configPath string) (cfg *config.Config, home string) {
 }
 
 // parseForceFlagSet parses a -f flag from args for the named subcommand and
-// returns its value.
-func parseForceFlagSet(name string, args []string) bool {
-	fs := flag.NewFlagSet(name, flag.ExitOnError)
+// returns its value and any parse error.
+func parseForceFlagSet(name string, args []string) (bool, error) {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	f := fs.Bool("f", false, "overwrite existing files")
-	// fs.Parse only returns an error when ErrorHandling is ContinueOnError;
-	// with ExitOnError it exits on parse failure, so the error is always nil.
-	_ = fs.Parse(args)
-	return *f
+	if err := fs.Parse(args); err != nil {
+		return false, fmt.Errorf("%s: %w", name, err)
+	}
+	return *f, nil
 }

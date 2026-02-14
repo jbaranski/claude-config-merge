@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/jeff/claude-config-merge/internal/backup"
 	"github.com/jeff/claude-config-merge/internal/merge"
@@ -44,9 +45,29 @@ func run(masterPath, localPath string, force bool, w io.Writer) error {
 		return fmt.Errorf("failed to marshal merged settings: %w", err)
 	}
 
-	if err := os.WriteFile(localPath, append(out, '\n'), 0o600); err != nil {
+	dir := filepath.Dir(localPath)
+	tmp, err := os.CreateTemp(dir, ".settings-merge-*")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	// ensure temp is cleaned up on any error path
+	defer func() {
+		if tmpName != "" {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(append(out, '\n')); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("writing temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+	if err := os.Rename(tmpName, localPath); err != nil {
 		return fmt.Errorf("failed to write merged settings: %w", err)
 	}
+	tmpName = "" // disarm the defer
 
 	if len(result.Added) > 0 {
 		fmt.Fprintf(w, "Keys added:\n")

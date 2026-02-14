@@ -170,6 +170,10 @@ func TestLoadJSON_InvalidJSON(t *testing.T) {
 }
 
 func TestRun_WriteFailure(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission test: running as root")
+	}
+
 	dir := t.TempDir()
 	masterPath := filepath.Join(dir, "master.json")
 	localPath := filepath.Join(dir, "local.json")
@@ -177,15 +181,47 @@ func TestRun_WriteFailure(t *testing.T) {
 	writeJSON(t, masterPath, map[string]any{"key": "value"})
 	writeJSON(t, localPath, map[string]any{})
 
-	// Make local file read-only so the final write back fails.
-	if err := os.Chmod(localPath, 0o444); err != nil { //nolint:gosec // 0o444 is intentional to test write failure
+	// Make the directory non-writable so os.CreateTemp (and any rename) fails.
+	if err := os.Chmod(dir, 0o555); err != nil { //nolint:gosec // 0o555 is intentional to test write failure
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(localPath, 0o600) })
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) //nolint:gosec // restoring directory to normal permissions after test
 
 	err := run(masterPath, localPath, false, &bytes.Buffer{})
 	if err == nil {
-		t.Fatal("expected error when writing to read-only file, got nil")
+		t.Fatal("expected error when writing to read-only directory, got nil")
+	}
+}
+
+func TestRun_BackupFailure(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission test: running as root")
+	}
+
+	// Use a subdirectory so we can make localPath's directory read-only
+	// without affecting masterPath.
+	baseDir := t.TempDir()
+	masterPath := filepath.Join(baseDir, "master.json")
+	localDir := filepath.Join(baseDir, "local")
+	if err := os.MkdirAll(localDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	localPath := filepath.Join(localDir, "settings.json")
+
+	writeJSON(t, masterPath, map[string]any{"key": "value"})
+	writeJSON(t, localPath, map[string]any{})
+
+	// Make the local directory read-only so backup.Create fails when it
+	// tries to write the backup file there.
+	if err := os.Chmod(localDir, 0o555); err != nil { //nolint:gosec // 0o555 intentional to test backup failure
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(localDir, 0o755) }) //nolint:gosec // restore directory permissions after test
+
+	var buf bytes.Buffer
+	err := run(masterPath, localPath, false, &buf)
+	if err == nil {
+		t.Fatal("expected error when backup directory is read-only, got nil")
 	}
 }
 
