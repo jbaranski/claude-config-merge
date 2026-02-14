@@ -21,17 +21,24 @@ make deps    # install goimports and golangci-lint
 make all     # format, lint, test, build
 ```
 
-## Run
+## Install
 
 ```sh
-make build
-./claude-config-merge
+make install
 ```
 
-To use a different config file:
+Builds the binary and copies it to `~/.local/bin/claude-config-merge`. Ensure `~/.local/bin` is on your `PATH`:
 
 ```sh
-./claude-config-merge -config /path/to/config.json
+# add to ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then run from anywhere:
+
+```sh
+claude-config-merge
+claude-config-merge -config /path/to/config.json
 ```
 
 ## Make Commands
@@ -41,6 +48,7 @@ To use a different config file:
 | `make deps`          | Install dev dependencies (run first)     |
 | `make all`           | Format, lint, test, and build            |
 | `make build`         | Build the binary                         |
+| `make install`       | Build and install to `~/.local/bin`      |
 | `make test`          | Run tests with race detector             |
 | `make coverage`      | Run tests and generate coverage report   |
 | `make coverage-check`| Fail if coverage is below 80%            |
