@@ -72,8 +72,10 @@ func TestRun_ReportsConflictsInOutput(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(buf.String(), "Conflicts") {
-		t.Errorf("expected Conflicts in output, got:\n%s", buf.String())
+	// With S3/S4: conflict-only (no Added, no Forced) returns early with a summary line.
+	output := buf.String()
+	if !strings.Contains(output, "conflict(s) kept local value") {
+		t.Errorf("expected conflict summary in output, got:\n%s", output)
 	}
 }
 
@@ -90,8 +92,8 @@ func TestRun_MatchingKeysSkipsWrite(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(buf.String(), "No changes to write") {
-		t.Errorf("expected 'No changes to write' in output, got:\n%s", buf.String())
+	if !strings.Contains(buf.String(), "up to date, nothing to write") {
+		t.Errorf("expected 'up to date, nothing to write' in output, got:\n%s", buf.String())
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -285,15 +287,10 @@ func TestRun_ConflictWithNestedObjectValue(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// With S3/S4: conflict-only (no Added, no Forced) returns early with a summary line.
 	output := buf.String()
-	if !strings.Contains(output, "Conflicts") {
-		t.Errorf("expected 'Conflicts' in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "master:") {
-		t.Errorf("expected 'master:' label in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "local:") {
-		t.Errorf("expected 'local:' label in output, got:\n%s", output)
+	if !strings.Contains(output, "conflict(s) kept local value") {
+		t.Errorf("expected conflict summary in output, got:\n%s", output)
 	}
 }
 
@@ -314,15 +311,10 @@ func TestRun_ConflictWithSliceValue(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// With S3/S4: conflict-only (no Added, no Forced) returns early with a summary line.
 	output := buf.String()
-	if !strings.Contains(output, "Conflicts") {
-		t.Errorf("expected 'Conflicts' in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "master:") {
-		t.Errorf("expected 'master:' label in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, "local:") {
-		t.Errorf("expected 'local:' label in output, got:\n%s", output)
+	if !strings.Contains(output, "conflict(s) kept local value") {
+		t.Errorf("expected conflict summary in output, got:\n%s", output)
 	}
 }
 
@@ -331,7 +323,9 @@ func TestRun_ListsLocalOnlyKeys(t *testing.T) {
 	masterPath := filepath.Join(dir, "master.json")
 	localPath := filepath.Join(dir, "local.json")
 
-	writeJSON(t, masterPath, map[string]any{"masterKey": "value"})
+	// Add a new key from master alongside the matching and local-only keys so
+	// we trigger a write and the full merge report is printed.
+	writeJSON(t, masterPath, map[string]any{"masterKey": "value", "newKey": "from-master"})
 	writeJSON(t, localPath, map[string]any{"localOnlyKey": "local-value", "masterKey": "value"})
 
 	var buf bytes.Buffer

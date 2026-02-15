@@ -27,18 +27,20 @@ func run(masterPath, localPath string, force bool, w io.Writer) error {
 
 	result := merge.Merge(masterData, localData, force)
 
+	// Always print the full keys report first, then decide whether to write.
 	printMergeReport(&result, w)
 
 	if len(result.Added) == 0 && len(result.Forced) == 0 {
-		fmt.Fprintf(w, "No changes to write. Keys added: 0  |  Conflicts: %d  |  Matching: %d  |  Local-only: %d\n", len(result.Conflicts), len(result.Matching), len(result.LocalOnly))
+		fmt.Fprintf(w, "Keys added: %d  |  Forced: %d  |  Conflicts: %d  |  Matching: %d  |  Local-only: %d\n",
+			len(result.Added), len(result.Forced), len(result.Conflicts), len(result.Matching), len(result.LocalOnly))
+		if len(result.Conflicts) > 0 {
+			fmt.Fprintf(w, "Settings: no keys added. %d conflict(s) kept local value (use -f to let master win).\n",
+				len(result.Conflicts))
+		} else {
+			fmt.Fprintf(w, "Settings: up to date, nothing to write.\n")
+		}
 		return nil
 	}
-
-	backupPath, err := backup.Create(localPath)
-	if err != nil {
-		return fmt.Errorf("failed to create backup: %w", err)
-	}
-	fmt.Fprintf(w, "Backup created: %s\n", backupPath)
 
 	out, err := json.MarshalIndent(result.Merged, "", "  ")
 	if err != nil {
@@ -64,6 +66,14 @@ func run(masterPath, localPath string, force bool, w io.Writer) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
+
+	// Backup is created only after the temp file is fully written and ready to rename.
+	backupPath, err := backup.Create(localPath)
+	if err != nil {
+		return fmt.Errorf("failed to create backup: %w", err)
+	}
+	fmt.Fprintf(w, "Backup created: %s\n", backupPath)
+
 	if err := os.Rename(tmpName, localPath); err != nil {
 		return fmt.Errorf("failed to write merged settings: %w", err)
 	}

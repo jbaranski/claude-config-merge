@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 // Result holds the outcome of a directory sync operation.
@@ -75,6 +76,10 @@ func Sync(src, dst string, force bool) (Result, error) {
 		}
 	}
 
+	sort.Strings(res.Copied)
+	sort.Strings(res.Skipped)
+	sort.Strings(res.Forced)
+
 	return res, nil
 }
 
@@ -110,16 +115,16 @@ func copyDir(src, dst string) error {
 
 // copyFile copies the file at src to dst, preserving the source file's permissions.
 func copyFile(src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return fmt.Errorf("stat %s: %w", src, err)
-	}
-
 	in, err := os.Open(src)
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", src, err)
 	}
 	defer in.Close() //nolint:errcheck // best-effort close of read-only source
+
+	info, err := in.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", src, err)
+	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(dst), ".copy-*")
 	if err != nil {

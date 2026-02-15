@@ -1,7 +1,10 @@
 // Package merge implements deep-merge of JSON settings maps.
 package merge
 
-import "reflect"
+import (
+	"reflect"
+	"sort"
+)
 
 // Conflict represents a key present in both master and local where values differ.
 type Conflict struct {
@@ -36,6 +39,14 @@ func Merge(master, local map[string]any, force bool) Result {
 	}
 
 	mergeInto(result.Merged, master, local, "", force, &result)
+
+	sort.Strings(result.Added)
+	sort.Strings(result.Matching)
+	sort.Strings(result.LocalOnly)
+	sort.Strings(result.Forced)
+	sort.Slice(result.Conflicts, func(i, j int) bool {
+		return result.Conflicts[i].Key < result.Conflicts[j].Key
+	})
 
 	return result
 }
